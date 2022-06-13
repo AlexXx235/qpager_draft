@@ -1,9 +1,11 @@
-use diesel::{PgConnection, RunQueryDsl, QueryDsl};
-use diesel::result::Error as DbError;
 use tungstenite::Message;
 
+use diesel::{PgConnection, RunQueryDsl, QueryDsl};
+use diesel::result::Error as DbError;
+use diesel::ExpressionMethods;
+
 use super::models::*;
-use super::schema::users::dsl::*;
+use super::schema::users;
 
 use serde_json as JSON;
 use JSON::{Map, Value};
@@ -24,10 +26,14 @@ use openssl::hash::MessageDigest;
 //     }
 // }
 
-pub fn is_signed_up(params: Map<String, Value>, conn: PgConnection) -> bool {
+pub fn is_signed_up(params: Map<String, Value>, conn: &mut PgConnection) -> bool {
     let login = params["login"].to_string();
 
-    let user = users.filter(login.eq()).single_value();
+    let user = users::table
+        .filter(users::login.eq(login))
+        .first::<User>(conn)
+        .unwrap();
+    println!("{}", user.login);
     true
 }
 
@@ -55,7 +61,7 @@ pub fn sign_up(params: Map<String, Value>, conn: &mut PgConnection) -> Result<()
         salt: &hex::encode(salt)
     };
     
-    let inserted_rows_count = diesel::insert_into(users)
+    let inserted_rows_count = diesel::insert_into(users::table)
         .values(new_user)
         .execute(conn)?;
 
