@@ -1,7 +1,11 @@
+use std::env;
+
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
+
 use dotenv::dotenv;
-use std::env;
+
+use openssl::rand;
 
 pub fn establish_connection() -> PgConnection {
     dotenv().ok();
@@ -10,4 +14,11 @@ pub fn establish_connection() -> PgConnection {
         .expect("DATABASE_URL must be set");
     PgConnection::establish(&database_url)
         .expect(&format!("Error connecting to {}", database_url))
+}
+
+pub fn generate_session_token() -> String {
+    let mut token = [0; 32];
+    rand::rand_bytes(&mut token).unwrap();
+
+    hex::encode(&token)
 }

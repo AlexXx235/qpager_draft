@@ -37,12 +37,13 @@ fn get_user_action() -> u32 {
 
 fn main () {
     let (mut socket, _) = connect("ws://localhost:9001").expect("Connection failed");
+    let mut session_key: String;
 
 
     loop {
         let choice = get_user_action();
 
-        let msg = match choice {
+        match choice {
             1 => continue,
             
             2 => {
@@ -55,19 +56,32 @@ fn main () {
                     params: params
                 };
 
-                Message::Text(JSON::to_string(&request).unwrap())
+                let msg = Message::Text(JSON::to_string(&request).unwrap());
+                socket.write_message(msg);
             }, 
 
             3 => {
-                Message::Text(String::from("authorization"))
+                let mut params = <Map<String, Value>>::new();
+                params.insert(String::from("login"), Value::String(String::from("alex")));
+                params.insert(String::from("password"), Value::String(String::from("qwerty")));
+
+                let request = Request {
+                    method: Method::LogIn,
+                    params: params
+                };
+
+                let msg = Message::Text(JSON::to_string(&request).unwrap());
+                socket.write_message(msg);
+                let responce = socket.read_message().unwrap();
+                println!("{}", responce);
             },
 
             _ => continue
         };
 
-        socket.write_message(msg);
-        let responce = socket.read_message().unwrap();
-        println!("{}", responce);
+        // socket.write_message(msg);
+        // let responce = socket.read_message().unwrap();
+        // println!("{}", responce);
     }
     
 }
