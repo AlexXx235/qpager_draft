@@ -3,10 +3,10 @@ use std::io;
 use tungstenite::client::connect;
 use tungstenite::protocol::Message;
 
-use qpager_lib::{Request, Method, Responce, Params};
+use qpager_lib::{Request, Method, Responce};
 
 use serde_json as JSON;
-use JSON::{Value, Map};
+use JSON::{Value, Map, json};
 
 fn show_menu() {
     println!("1 - Open chat");
@@ -38,7 +38,13 @@ fn get_user_action() -> u32 {
 
 fn main () {
     let (mut socket, _) = connect("ws://localhost:9001").expect("Connection failed");
-    socket.write_message(Message::Text(String::from("hello from client"))).unwrap();
+    let request = Request {
+        method: Method::LogIn,
+        params: json!({
+            "text": "hello from client"
+        })
+    };
+    socket.write_message(Message::Text(JSON::to_string(&request).unwrap())).unwrap();
     println!("Message sent");
     let responce = socket.read_message().unwrap();
     println!("Responce got: {}", responce.to_text().unwrap());
