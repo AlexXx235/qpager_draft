@@ -3,7 +3,7 @@ use std::io;
 use tungstenite::client::connect;
 use tungstenite::protocol::Message;
 
-use qpager_lib::{Request, Method};
+use qpager_lib::{Request, Method, Responce, Params};
 
 use serde_json as JSON;
 use JSON::{Value, Map};
@@ -12,6 +12,7 @@ fn show_menu() {
     println!("1 - Open chat");
     println!("2 - Registration");
     println!("3 - Authorization");
+    println!("4 - Verify session tokens");
 }
 
 fn get_user_action() -> u32 {
@@ -37,51 +38,69 @@ fn get_user_action() -> u32 {
 
 fn main () {
     let (mut socket, _) = connect("ws://localhost:9001").expect("Connection failed");
-    let mut session_key: String;
+    socket.write_message(Message::Text(String::from("hello from client"))).unwrap();
+    println!("Message sent");
+    let responce = socket.read_message().unwrap();
+    println!("Responce got: {}", responce.to_text().unwrap());
+    socket.close(None);
+    // let mut session_token = String::new();
 
+    // loop {
+    //     let choice = get_user_action();
 
-    loop {
-        let choice = get_user_action();
-
-        match choice {
-            1 => continue,
+    //     match choice {
+    //         1 => continue,
             
-            2 => {
-                let mut params = <Map<String, Value>>::new();
-                params.insert(String::from("login"), Value::String(String::from("alex")));
-                params.insert(String::from("password"), Value::String(String::from("qwerty")));
+    //         2 => {
+    //             let mut params = Params::new();
+    //             params.insert(String::from("login"), Value::String(String::from("alex")));
+    //             params.insert(String::from("password"), Value::String(String::from("qwerty")));
 
-                let request = Request {
-                    method: Method::SignUp,
-                    params: params
-                };
+    //             let request = Request {
+    //                 method: Method::SignUp,
+    //                 params: params
+    //             };
 
-                let msg = Message::Text(JSON::to_string(&request).unwrap());
-                socket.write_message(msg);
-            }, 
+    //             let msg = Message::Text(JSON::to_string(&request).unwrap());
+    //             socket.write_message(msg);
+    //         }, 
 
-            3 => {
-                let mut params = <Map<String, Value>>::new();
-                params.insert(String::from("login"), Value::String(String::from("alex")));
-                params.insert(String::from("password"), Value::String(String::from("qwerty")));
+    //         3 => {
+    //             let mut params = <Map<String, Value>>::new();
+    //             params.insert(String::from("login"), Value::String(String::from("alex")));
+    //             params.insert(String::from("password"), Value::String(String::from("qwerty")));
 
-                let request = Request {
-                    method: Method::LogIn,
-                    params: params
-                };
+    //             let request = Request {
+    //                 method: Method::LogIn,
+    //                 params: params
+    //             };
 
-                let msg = Message::Text(JSON::to_string(&request).unwrap());
-                socket.write_message(msg);
-                let responce = socket.read_message().unwrap();
-                println!("{}", responce);
-            },
+    //             let msg = Message::Text(JSON::to_string(&request).unwrap());
+    //             socket.write_message(msg);
+    //             let responce = socket.read_message().unwrap();
+    //             let responce: Responce = JSON::from_str(&responce.to_string()).unwrap();
+    //             println!("{}", responce.params["session_token"].as_str().unwrap());
+    //             session_token = String::from(responce.params["session_token"].as_str().unwrap());
+    //         },
 
-            _ => continue
-        };
+    //         4 => {
+    //             let mut params = <Map<String, Value>>::new();
+    //             params.insert(String::from("session_token"), Value::String(session_token.clone()));
 
-        // socket.write_message(msg);
-        // let responce = socket.read_message().unwrap();
-        // println!("{}", responce);
-    }
+    //             let request = Request {
+    //                 method: Method::Test,
+    //                 params: params
+    //             };
+
+    //             let msg = Message::Text(JSON::to_string(&request).unwrap());
+    //             socket.write_message(msg);
+    //         },
+    //         _ => continue
+    //     };
+
+    //     // socket.write_message(msg);
+    //     // let responce = socket.read_message().unwrap();
+    //     // println!("{}", responce);
+    // }
     
 }
