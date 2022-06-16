@@ -15,7 +15,7 @@ use server::db::queries as db_queries;
 use serde_json as JSON;
 use JSON::{Value, json};
 
-use qpager_lib::{Request, Method, Params, Responce};
+use qpager_lib::{Request, Method, Responce};
 
 use fern::colors::{Color, ColoredLevelConfig};
 use log::*;
@@ -120,23 +120,26 @@ fn main () {
 
     // Main logic
     let request_processing = spawn(move || {
+        let mut conn = establish_connection();
+
         loop {
             let (client_id, request) = rx_request.recv().unwrap();
-            let request = JSON::to_string(&request).unwrap();
-            trace!("Request from client {} received for processing: {}", client_id, request);
-            trace!("Request from client {} proceed successfully: {}", client_id, request);
-            let responce = Responce {
-                result: true,
-                params: json!({})
-            };
-            // trace!("Responce sent to se {}: {}", client_id, responce);
-            tx_responce.send((client_id, responce)).unwrap();
+
+            match request.method {
+                Method::SignUp => {
+
+                },
+                Method::LogIn => {},
+                Method::Test => {}
+            }
+
+            // tx_responce.send((client_id, responce)).unwrap();
         }
     });
 
-    listen_for_clietns.join();
-    handle_clients.join();
-    request_processing.join();
+    listen_for_clietns.join().unwrap();
+    handle_clients.join().unwrap();
+    request_processing.join().unwrap();
         // let tokens = Arc::clone(&tokens);
 
         // spawn (move || {
