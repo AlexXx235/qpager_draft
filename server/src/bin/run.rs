@@ -1,3 +1,4 @@
+use std::env;
 use std::hash::Hash;
 use std::net::{TcpListener, TcpStream};
 use std::thread::spawn;
@@ -15,10 +16,16 @@ use server::db::queries as db_queries;
 use serde_json as JSON;
 use JSON::{Value, json};
 
-use qpager_lib::{Request, Method, Responce};
+use qpager_lib::*;
 
 use fern::colors::{Color, ColoredLevelConfig};
 use log::*;
+
+use threadpool::ThreadPool;
+
+use sqlx::postgres::PgListener;
+
+use dotenv::dotenv;
 
 fn init_logger() {
     let colors = ColoredLevelConfig::new()
@@ -46,8 +53,6 @@ fn init_logger() {
 fn main () {
     init_logger();
     let server = TcpListener::bind("127.0.0.1:9001").unwrap();
-    // let tokens = Arc::new(Mutex::new(<HashMap<String, i32>>::new()));
-
 
     let (tx_incoming_client, rx_incoming_client) = channel::<WebSocket<TcpStream>>();
     
@@ -63,7 +68,8 @@ fn main () {
     });
     
     let (tx_request, rx_request) = channel::<(i32, Request)>();
-    let (tx_responce, rx_responce) = channel::<(i32, Responce)>();
+    let (tx_result, rx_result) = channel::<(i32, RequestResult)>();
+    let (tx_event, rx_event) = channel::<(i32, Event)>();
 
     // Manage client connections
     let handle_clients = spawn(move || {
@@ -84,7 +90,7 @@ fn main () {
                 }
             }
 
-            match rx_responce.try_recv() {
+            match rx_result.try_recv() {
                 Ok((id, responce)) => {
                     let responce = JSON::to_string(&responce).unwrap();
                     trace!("Responce for client {} received for sending: {}", id, responce);
@@ -98,7 +104,10 @@ fn main () {
                     panic!("rx_incoming_client disconnected");
                 }
             }
+            dotenv().ok();
 
+            let database_url = env::var("DATABASE_URL")
+                .expect("DATABASE_URL must be set");
             for (id, client) in clients.iter_mut() {
                 match client.read_message() {
                     Ok(Message::Text(request)) => {
@@ -107,7 +116,7 @@ fn main () {
                         tx_request.send((*id, request)).unwrap();
                     },
                     Err(TError::ConnectionClosed) => {
-                        info!("Client {} disconnected", id);
+                        info!("Client {} disconnected", id);let mut conn = establish_connection();
                     },
                     Err(_) => {
                         
@@ -118,18 +127,85 @@ fn main () {
         }
     });
 
+    // Listening for database events
+    let db_listening = spawn(move || {
+        dotenv().ok();
+
+        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let mut listener = PgListener::new(database_url);
+        listener.listen("new_private_message");
+        listener.listen("new_chat_message");
+        
+        loop {
+            let event = listener.recv().unwrap();
+
+            trace!("DB event: channel = {}, payload = {}", event.channel(), event.payload());
+        }
+    });
+
     // Main logic
     let request_processing = spawn(move || {
-        let mut conn = establish_connection();
+        let pool = ThreadPool::new(num_cpus::get());
+        let mut tokens = Arc::new(Mutex::new(<HashMap<String, i32>>::new()));
 
         loop {
+            let mut conn = establish_connection();
+            let tx_responce = tx_result.clone();
+            
+            // Block and wait
             let (client_id, request) = rx_request.recv().unwrap();
-
+            
+            trace!("Request got for processing: {:?}", &request);
             match request.method {
                 Method::SignUp => {
-
+                    pool.execute(move || {
+                        match db_queries::sign_up(&request.params, &mut conn) {
+                            Ok(_) => {
+                                // Process responce
+                                let result = RequestResult::Ok(json!({}));
+                                tx_responce.send((client_id, result)).unwrap();
+                            },
+                            Err(err) => {
+                                if err.is::<RequestError>() {
+                                    let result = RequestResult::Err(*err.downcast::<RequestError>().unwrap());
+                                    tx_responce.send((client_id, result)).unwrap();
+                                } else {
+                                    error!("Method SignUp: Error {}", &err);   
+                                }
+                            }
+                        }
+                    })
                 },
-                Method::LogIn => {},
+                Method::LogIn => {
+                    let mut tokens = Arc::clone(&tokens);
+
+                    pool.execute(move || {
+                        match db_queries::verify_user_credentials(&request.params, &mut conn) {
+                            Ok(Some(id)) => {
+                                trace!("LogIn method: verified successfully, id = {}", id);
+                                let token = generate_session_token();
+                                trace!("LogIn method: token generated: {}", token);
+
+                                let mut tokens = tokens.lock().unwrap();
+                                tokens.insert(token.clone(), id);
+
+                                let result = RequestResult::Ok(json!({
+                                    "session_token": token
+                                }));
+
+                                tx_responce.send((client_id, result)).unwrap();
+                            },
+                            Ok(None) => {
+                                trace!("LogIn method: verification failed");
+                                let result = RequestResult::Err(RequestError::Auth(AuthError::IncorrectCredentials));
+                                tx_responce.send((client_id, result)).unwrap();
+                            },
+                            Err(err) => {
+                                error!("LogIn method: Error: {}", err);
+                            }
+                        }
+                    });
+                },
                 Method::Test => {}
             }
 
@@ -140,6 +216,7 @@ fn main () {
     listen_for_clietns.join().unwrap();
     handle_clients.join().unwrap();
     request_processing.join().unwrap();
+    db_listening.join().unwrap();
         // let tokens = Arc::clone(&tokens);
 
         // spawn (move || {

@@ -16,31 +16,37 @@ use openssl::hash::MessageDigest;
 
 use qpager_lib::*;
 
-fn is_signed_up(params: &Map<String, Value>, conn: &mut PgConnection) -> Result<bool, Box<dyn Error>> {
-    let login = params["login"].to_string();
+use log::*;
 
-    match users::table.filter(users::login.eq(login)).first::<User>(conn) {
+fn is_signed_up(params: &Value, conn: &mut PgConnection) -> Result<bool, Box<dyn Error>> {
+    let login = params["login"].as_str().unwrap();
+    trace!("Is signed up method: login = {}", &login);
+    match users::table.filter(users::login.eq(&login)).first::<User>(conn) {
         Ok(_) => {
+            trace!("Is signed up: {} is already signed up", &login);
             return Ok(true);
         },
         Err(DieselError::NotFound) => {
+            trace!("Is signed up: {} is not signed up yet", &login);
             return Ok(false);
         },
         Err(err) => {
+            error!("Is signed up: Error: {}", &err);
             return Err(Box::new(err));
         }
     }
 }
 
-pub fn sign_up(params: &Map<String, Value>, conn: &mut PgConnection) -> Result<(), Box<dyn Error>> {
-    // match is_signed_up(params, conn) {
-    //     Ok(true) => {
-    //         return Err(Box::new(RequestError::Auth(AuthError::AlreadySignedUp)))
-    //     }
-    // }
+pub fn sign_up(params: &Value, conn: &mut PgConnection) -> Result<(), Box<dyn Error>> {
+    let is_signed_up = is_signed_up(params, conn)?;
+    if is_signed_up {
+        return Err(Box::new(RequestError::Auth(AuthError::AlreadySignedUp)));
+    }
 
-    let login = params["login"].to_string();
-    let password = params["password"].to_string();
+    let login = params["login"].as_str().unwrap();
+    let password = params["password"].as_str().unwrap();
+
+    trace!("Sign up: login = {}, password = {}", &login, &password);
 
     let mut salt = [0; 32];
     rand::rand_bytes(&mut salt).unwrap();
@@ -57,10 +63,12 @@ pub fn sign_up(params: &Map<String, Value>, conn: &mut PgConnection) -> Result<(
         .unwrap();
 
     let new_user = NewUser {
-        login: login.as_str(),
+        login: login,
         password: &hex::encode(hashed_password),
         salt: &hex::encode(salt)
     };
+
+    trace!("Sign up: new user: {:?}", new_user);
     
     diesel::insert_into(users::table)
         .values(new_user)
@@ -69,11 +77,15 @@ pub fn sign_up(params: &Map<String, Value>, conn: &mut PgConnection) -> Result<(
     Ok(())
 }
 
-pub fn verify_user_credentials(params: &Map<String, Value>, conn: &mut PgConnection) -> Result<(bool, i32), Box<dyn Error>> {
-    let login = params["login"].to_string();
-    let password = params["password"].to_string();
+pub fn verify_user_credentials(params: &Value, conn: &mut PgConnection) -> Result<Option<i32>, Box<dyn Error>> {
+    let login = params["login"].as_str().unwrap();
+    let password = params["password"].as_str().unwrap();
+
+    trace!("Verify user credentials: login = {}, password = {}", login, password);
 
     let user = users::table.filter(users::login.eq(login)).first::<User>(conn)?;
+
+    trace!("Verify user credentials: user = {:?}", &user);
 
     let mut hashed_password = [0; 256];
 
@@ -87,9 +99,11 @@ pub fn verify_user_credentials(params: &Map<String, Value>, conn: &mut PgConnect
         .unwrap();
     
     if user.password == hex::encode(&hashed_password) {
-        Ok((true, user.id))
+        trace!("Verify user credentials: success");
+        Ok(Some(user.id))
     } else {
-        Ok((false, 0))
+        trace!("Verify user credentials: failed");
+        Ok(None)
     }
 }
 

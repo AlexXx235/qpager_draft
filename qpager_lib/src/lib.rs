@@ -61,6 +61,7 @@ impl Error for RequestError {}
 #[derive(Serialize, Deserialize, Debug)]
 pub enum AuthError {
     AlreadySignedUp,
+    IncorrectCredentials
 }
 
 impl fmt::Display for AuthError {
@@ -68,6 +69,9 @@ impl fmt::Display for AuthError {
         match self {
             AuthError::AlreadySignedUp => {
                 write!(f, "already signed up")
+            },
+            AuthError::IncorrectCredentials => {
+                write!(f, "incorrect login or password")
             }
         }
     }
