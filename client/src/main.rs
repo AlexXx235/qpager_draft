@@ -1,11 +1,15 @@
-use std::io;
+use std::io::{self, stdin, Read, ErrorKind};
+use std::net::TcpStream;
+use std::error::Error;
 
-use tungstenite::client::connect;
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{client::connect, WebSocket};
 use tungstenite::protocol::Message;
 
-use qpager_lib::{Request, Method, Responce};
+use qpager_lib::{Request, Method, Responce, RequestResult, RequestError};
 
 use serde_json as JSON;
+use serde::de::Deserialize;
 use JSON::{Value, Map, json};
 
 fn show_menu() {
@@ -36,8 +40,94 @@ fn get_user_action() -> u32 {
     }
 }   
 
+fn get_login_password(login: &mut String, password: &mut String){
+    let mut login = String::new();
+    println!("Please, input your login: ");
+    std::io::Stdin::read_line(&std::io::stdin(), &mut login).unwrap();
+    let mut password = String::new();
+    println!("Please, input your password: ");
+    std::io::Stdin::read_line(&std::io::stdin(), &mut password).unwrap();
+}
+
+fn authentification(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, login: &mut String, password: &mut String) -> Result<String, Box<dyn Error> >{
+    get_login_password(login, password);
+    let request = Request {
+        method: Method::LogIn,
+        params: json!({
+            "method": "authentication",
+            "params": {
+                "login": login,
+                "password": password,
+            }
+        })
+    };
+
+    if let Err(err) = socket.write_message(Message::Text(JSON::to_string(&request).unwrap())) {
+        return Err(Box::new(err));
+    }
+
+    let responce = socket.read_message().unwrap();
+    let responce: RequestResult = JSON::from_str(responce.to_text().unwrap()).unwrap();
+
+    match responce {
+        RequestResult::Ok(tok) => {
+            return Ok(String::from(tok["session_token"].as_str().unwrap()));
+        },
+        RequestResult::Err(err) => {
+            return Err(Box::new(err));
+        },
+    }
+    
+}
+
 fn main () {
     let (mut socket, _) = connect("ws://localhost:9001").expect("Connection failed");
+    let mut token = String::new();
+    let mut login = String::new();
+    let mut password = String::new();
+
+    loop{
+        println!("1. Authentification\n2. Regestration\n");
+        let mut buf = String::new();
+        stdin().read_line(&mut buf);
+        match buf.as_str() {
+            "1" => {
+                match authentification(&mut socket, &mut login, &mut password) {
+                    Ok(tok) => {
+                        token = tok;
+                        println!("Successful authentification");
+                        break;
+                    },
+                    Err(err) => {
+                        if err.is::<RequestError>() {
+                            let result = RequestResult::Err(*err.downcast::<RequestError>().unwrap());
+                            println!("Error message: {:?}", result);
+                        }
+                        
+                    },
+                }
+            },
+            "2" => {
+
+            },
+            _ => {}
+        }
+    }
+
+    
+
+    // loop{
+    //     match authentification(&mut socket, &login, &password) {
+    //         Ok(tok) => {
+    //             token = tok;
+    //             break;
+    //         },
+    //         Err(err) => {
+    //             println!("Error message: {}", err);
+    //         },
+    //     }
+    // }
+
     let request = Request {
         method: Method::LogIn,
         params: json!({
