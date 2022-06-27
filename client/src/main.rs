@@ -44,18 +44,32 @@ fn main () {
     let responce = socket.read_message().unwrap();
     println!("Responce got: {}", responce.to_text().unwrap());
     let response = JSON::from_str::<RequestResult>(responce.to_text().unwrap()).unwrap();
-    let session_token = if let MethodResult::LogIn{ session_token } = response.result.unwrap() {
-        session_token
+    let mut session_token;
+    let mut user_id;
+    if let MethodResult::LogIn{ user_id: id, session_token: token } = response.result.unwrap() {
+        session_token = token;
+        user_id = id;
     } else {
         panic!("Wrong response");
     };
+
+    //GetUsers
+    let request = Request {
+        request_id: 999,
+        method: Method::GetUsers,
+        session_token: Some(session_token.clone())
+    };
+    socket.write_message(Message::Text(JSON::to_string(&request).unwrap())).unwrap();
+    println!("Message sent");
+    let responce = socket.read_message().unwrap();
+    println!("Responce got: {}", responce.to_text().unwrap());
 
     // SendPrivateMessage
     let request = Request {
         request_id: 3,
         method: Method::SendPrivateMessage {
-            message: String::from("hello user"),
-            receiver_login: String::from("user")
+            message: String::from("hello again8"),
+            receiver_id: 1
         },
         session_token: Some(session_token.clone())
     };
@@ -68,14 +82,16 @@ fn main () {
     let request = Request {
         request_id: 4,
         method: Method::GetPrivateChatMessages {
-            second_user_login: String::from("user")
+            second_user_id: 1
         },
         session_token: Some(session_token.clone())
     };
 
     socket.write_message(Message::Text(JSON::to_string(&request).unwrap())).unwrap();
     println!("Message sent");
-    
+    let responce = socket.read_message().unwrap();
+    println!("Responce got: {}", responce.to_text().unwrap());
+
     socket.close(None);
     
 }
